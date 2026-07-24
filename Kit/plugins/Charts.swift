@@ -588,19 +588,7 @@ public class LineChartView: ChartView {
     }
     
     public override func updateTrackingAreas() {
-        self.trackingAreas.forEach({ self.removeTrackingArea($0) })
-        if self.tooltipEnabledSnapshot {
-            self.addTrackingArea(NSTrackingArea(
-                rect: .zero,
-                options: [
-                    .activeAlways,
-                    .mouseEnteredAndExited,
-                    .mouseMoved,
-                    .inVisibleRect
-                ],
-                owner: self, userInfo: nil
-            ))
-        }
+        self.ensureTrackingArea(self.tooltipEnabledSnapshot)
         super.updateTrackingAreas()
     }
     
@@ -1407,17 +1395,7 @@ public class ColumnChartView: ChartView {
     }
     
     public override func updateTrackingAreas() {
-        self.trackingAreas.forEach({ self.removeTrackingArea($0) })
-        self.addTrackingArea(NSTrackingArea(
-            rect: .zero,
-            options: [
-                .activeAlways,
-                .mouseEnteredAndExited,
-                .mouseMoved,
-                .inVisibleRect
-            ],
-            owner: self, userInfo: nil
-        ))
+        self.ensureTrackingArea()
         super.updateTrackingAreas()
     }
 }
@@ -1525,12 +1503,7 @@ public class GridChartView: ChartView {
     }
     
     public override func updateTrackingAreas() {
-        self.trackingAreas.forEach({ self.removeTrackingArea($0) })
-        self.addTrackingArea(NSTrackingArea(
-            rect: CGRect(x: 0, y: 0, width: self.frame.width, height: self.frame.height),
-            options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
-            owner: self, userInfo: nil
-        ))
+        self.ensureTrackingArea()
         super.updateTrackingAreas()
     }
 }

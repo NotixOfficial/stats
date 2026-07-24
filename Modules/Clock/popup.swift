@@ -544,14 +544,10 @@ private class CalendarItemView: NSView {
     
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        self.trackingAreas.forEach { self.removeTrackingArea($0) }
-        guard self.isHoverable else { return }
-        self.addTrackingArea(NSTrackingArea(
-            rect: self.bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp],
-            owner: self,
-            userInfo: nil
-        ))
+        self.ensureTrackingArea(
+            self.isHoverable,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect]
+        )
     }
     
     override func mouseEntered(with event: NSEvent) {
