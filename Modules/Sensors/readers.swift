@@ -128,6 +128,11 @@ internal class SensorsReader: Reader<Sensors_List> {
     
     public override func read() {
         var sensors = self.list.sensors
+        var indexByKey: [String: Int] = [:]
+        indexByKey.reserveCapacity(sensors.count)
+        for index in sensors.indices {
+            indexByKey[sensors[index].key] = index
+        }
         
         for i in sensors.indices {
             guard sensors[i].group != .hid && !sensors[i].isComputed else { continue }
@@ -154,7 +159,7 @@ internal class SensorsReader: Reader<Sensors_List> {
                         return
                     }
                     
-                    if let idx = sensors.firstIndex(where: { $0.group == .hid && $0.key == key }) {
+                    if let idx = indexByKey[key], sensors[idx].group == .hid {
                         sensors[idx].value = value
                     }
                 }
@@ -165,11 +170,11 @@ internal class SensorsReader: Reader<Sensors_List> {
             
             let socSensors = sensors.filter({ $0.key.hasPrefix("SOC MTR Temp") }).map{ $0.value }
             if !socSensors.isEmpty {
-                if let idx = sensors.firstIndex(where: { $0.key == "Average SOC" }) {
+                if let idx = indexByKey["Average SOC"] {
                     sensors[idx].value = socSensors.reduce(0, +) / Double(socSensors.count)
                 }
                 if let max = socSensors.max() {
-                    if let idx = sensors.firstIndex(where: { $0.key == "Hottest SOC" }) {
+                    if let idx = indexByKey["Hottest SOC"] {
                         sensors[idx].value = max
                     }
                 }
@@ -177,47 +182,47 @@ internal class SensorsReader: Reader<Sensors_List> {
         }
         
         if let (cpu, gpu, ane, ram, pci) = self.IOSensors() {
-            if let idx = sensors.firstIndex(where: { $0.key == "CPU Power" }) {
+            if let idx = indexByKey["CPU Power"] {
                 sensors[idx].value = cpu
             }
-            if let idx = sensors.firstIndex(where: { $0.key == "GPU Power" }) {
+            if let idx = indexByKey["GPU Power"] {
                 sensors[idx].value = gpu
             }
-            if let idx = sensors.firstIndex(where: { $0.key == "ANE Power" }) {
+            if let idx = indexByKey["ANE Power"] {
                 sensors[idx].value = ane
             }
-            if let idx = sensors.firstIndex(where: { $0.key == "RAM Power" }) {
+            if let idx = indexByKey["RAM Power"] {
                 sensors[idx].value = ram
             }
-            if let idx = sensors.firstIndex(where: { $0.key == "PCI Power" }) {
+            if let idx = indexByKey["PCI Power"] {
                 sensors[idx].value = pci
             }
         }
         #endif
         
         if !cpuSensors.isEmpty {
-            if let idx = sensors.firstIndex(where: { $0.key == "Average CPU" }) {
+            if let idx = indexByKey["Average CPU"] {
                 sensors[idx].value = cpuSensors.reduce(0, +) / Double(cpuSensors.count)
             }
             if let max = cpuSensors.max() {
-                if let idx = sensors.firstIndex(where: { $0.key == "Hottest CPU" }) {
+                if let idx = indexByKey["Hottest CPU"] {
                     sensors[idx].value = max
                 }
             }
         }
         if !gpuSensors.isEmpty {
-            if let idx = sensors.firstIndex(where: { $0.key == "Average GPU" }) {
+            if let idx = indexByKey["Average GPU"] {
                 sensors[idx].value = gpuSensors.reduce(0, +) / Double(gpuSensors.count)
             }
             if let max = gpuSensors.max() {
-                if let idx = sensors.firstIndex(where: { $0.key == "Hottest GPU" }) {
+                if let idx = indexByKey["Hottest GPU"] {
                     sensors[idx].value = max
                 }
             }
         }
         if !fanSensors.isEmpty && fanSensors.count > 1 {
             if let f = fanSensors.max(by: { $0.value < $1.value }) as? Fan {
-                if let idx = sensors.firstIndex(where: { $0.key == "Fastest fan" }) {
+                if let idx = indexByKey["Fastest fan"] {
                     if var fan = sensors[idx] as? Fan {
                         fan.value = f.value
                         fan.minSpeed = f.minSpeed
@@ -228,13 +233,13 @@ internal class SensorsReader: Reader<Sensors_List> {
             }
         }
         
-        if let PSTRSensor = sensors.first(where: { $0.key == "PSTR"}), PSTRSensor.value > 0 {
+        if let pstrIndex = indexByKey["PSTR"], sensors[pstrIndex].value > 0 {
             let sinceLastRead = Date().timeIntervalSince(self.lastRead)
             let sinceFirstRead = Date().timeIntervalSince(self.firstRead)
             
-            if let totalIdx = sensors.firstIndex(where: {$0.key == "Total System Consumption"}), sinceLastRead > 0 {
-                sensors[totalIdx].value += PSTRSensor.value * sinceLastRead / 3600
-                if let avgIdx = sensors.firstIndex(where: {$0.key == "Average System Total"}), sinceFirstRead > 0 {
+            if let totalIdx = indexByKey["Total System Consumption"], sinceLastRead > 0 {
+                sensors[totalIdx].value += sensors[pstrIndex].value * sinceLastRead / 3600
+                if let avgIdx = indexByKey["Average System Total"], sinceFirstRead > 0 {
                     sensors[avgIdx].value = sensors[totalIdx].value * 3600 / sinceFirstRead
                 }
             }
@@ -243,11 +248,11 @@ internal class SensorsReader: Reader<Sensors_List> {
         }
         
         // cut off low dc in voltage
-        if let idx = sensors.firstIndex(where: { $0.key == "VD0R" }), sensors[idx].value < 0.4 {
+        if let idx = indexByKey["VD0R"], sensors[idx].value < 0.4 {
             sensors[idx].value = 0
         }
         // cut off low dc in current
-        if let idx = sensors.firstIndex(where: { $0.key == "ID0R" }), sensors[idx].value < 0.05 {
+        if let idx = indexByKey["ID0R"], sensors[idx].value < 0.05 {
             sensors[idx].value = 0
         }
         

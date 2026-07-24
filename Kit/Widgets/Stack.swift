@@ -83,7 +83,7 @@ public class StackWidget: WidgetWrapper {
             }
         }
         self.orderTableView.reorderCallback = { [weak self] in
-            self?.display()
+            self?.redraw()
         }
     }
     
@@ -258,7 +258,7 @@ public class StackWidget: WidgetWrapper {
             if tableNeedsToBeUpdated {
                 self.orderTableView.update()
             }
-            self.display()
+            self.redraw()
         })
     }
     
@@ -302,7 +302,7 @@ public class StackWidget: WidgetWrapper {
             self.modeState = StackMode(rawValue: key) ?? .auto
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_mode", value: key)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleSize(_ sender: NSControl) {
@@ -311,7 +311,7 @@ public class StackWidget: WidgetWrapper {
             self.fixedSizeState = state
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_size", value: self.fixedSizeState)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleMonospacedFont(_ sender: NSControl) {
@@ -320,7 +320,7 @@ public class StackWidget: WidgetWrapper {
             self.monospacedFontState = state
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_monospacedFont", value: self.monospacedFontState)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleAlignment(_ sender: NSMenuItem) {
@@ -331,7 +331,7 @@ public class StackWidget: WidgetWrapper {
             }
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_alignment", value: key)
-        self.display()
+        self.redraw()
     }
 }
 

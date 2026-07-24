@@ -11,6 +11,26 @@
 
 import Cocoa
 
+public extension NSStatusItem {
+    var hasValidBackingWindow: Bool {
+        guard let window = self.button?.window else { return false }
+        return window.windowNumber > 0
+    }
+
+    @discardableResult
+    func updateLength(_ newLength: CGFloat) -> Bool {
+        guard newLength.isFinite, newLength >= 0, self.hasValidBackingWindow else { return false }
+
+        let scale = self.button?.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let oldPixels = (self.length * scale).rounded()
+        let newPixels = (newLength * scale).rounded()
+        guard oldPixels != newPixels else { return false }
+
+        self.length = newLength
+        return true
+    }
+}
+
 public enum widget_t: String {
     case unknown = ""
     case mini = "mini"
@@ -162,6 +182,13 @@ open class WidgetWrapper: NSView, widget_p {
     public var onClick: (() -> Void)? = nil
     public var shadowSize: CGSize
     internal var queue: DispatchQueue
+    private var redrawScheduled: Bool = false
+    private var pendingWidth: CGFloat? = nil
+
+    private var hasUsableHost: Bool {
+        guard self.superview != nil, let window = self.window else { return false }
+        return window.windowNumber > 0
+    }
     
     public init(_ type: widget_t, title: String, frame: NSRect) {
         self.type = type
@@ -170,10 +197,76 @@ open class WidgetWrapper: NSView, widget_p {
         self.queue = DispatchQueue(label: "eu.exelban.Stats.WidgetWrapper.\(type.rawValue).\(title)")
         
         super.init(frame: frame)
+
+        self.wantsLayer = true
+        self.layerContentsRedrawPolicy = .never
+        self.layer?.contentsGravity = .center
     }
     
     required public init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    open override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard self.window != nil else { return }
+
+        if self.hasUsableHost, let width = self.pendingWidth {
+            self.applyWidth(width)
+        } else {
+            self.renderToLayer()
+        }
+    }
+
+    open override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        self.redraw()
+    }
+
+    open override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        self.redraw()
+    }
+
+    public func renderToLayer() {
+        if !Thread.isMainThread {
+            self.redraw()
+            return
+        }
+        guard let layer = self.layer, self.bounds.width > 0, self.bounds.height > 0 else { return }
+
+        let scale = self.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let pixelWidth = Int((self.bounds.width * scale).rounded())
+        let pixelHeight = Int((self.bounds.height * scale).rounded())
+        guard pixelWidth > 0, pixelHeight > 0 else { return }
+
+        guard let context = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
+        ) else { return }
+
+        context.scaleBy(x: scale, y: scale)
+        let graphicsContext = NSGraphicsContext(cgContext: context, flipped: self.isFlipped)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        self.effectiveAppearance.performAsCurrentDrawingAppearance {
+            self.draw(self.bounds)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let image = context.makeImage() else { return }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.contents = image
+        layer.contentsScale = scale
+        CATransaction.commit()
     }
     
     public func setWidth(_ width: CGFloat) {
@@ -182,13 +275,40 @@ open class WidgetWrapper: NSView, widget_p {
             newWidth = self.emptyView()
         }
         
-        guard self.shadowSize.width != newWidth else { return }
-        self.shadowSize.width = newWidth
-        
-        DispatchQueue.main.async {
-            self.setFrameSize(NSSize(width: newWidth, height: self.frame.size.height))
-            self.widthHandler?()
+        let scale = self.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let targetWidth = (newWidth * scale).rounded() / scale
+
+        let update = { [weak self] in
+            guard let self else { return }
+            guard self.shadowSize.width != targetWidth else { return }
+
+            // An unattached preview is safe to resize. A hosted view with an
+            // invalid/transitional window must wait until AppKit attaches it.
+            if self.superview != nil && !self.hasUsableHost {
+                self.pendingWidth = targetWidth
+                return
+            }
+
+            self.applyWidth(targetWidth)
         }
+
+        if Thread.isMainThread {
+            update()
+        } else {
+            DispatchQueue.main.async(execute: update)
+        }
+    }
+
+    private func applyWidth(_ width: CGFloat) {
+        self.pendingWidth = nil
+        self.shadowSize.width = width
+
+        let size = NSSize(width: width, height: self.frame.size.height)
+        if self.frame.size != size {
+            self.setFrameSize(size)
+        }
+        self.widthHandler?()
+        self.redraw()
     }
     
     public func emptyView() -> CGFloat {
@@ -214,8 +334,20 @@ open class WidgetWrapper: NSView, widget_p {
     }
     
     public func redraw() {
-        DispatchQueue.main.async { [weak self] in
-            self?.display()
+        let schedule = { [weak self] in
+            guard let self, !self.redrawScheduled else { return }
+            self.redrawScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.redrawScheduled = false
+                self.renderToLayer()
+            }
+        }
+
+        if Thread.isMainThread {
+            schedule()
+        } else {
+            DispatchQueue.main.async(execute: schedule)
         }
     }
     
@@ -273,6 +405,7 @@ public class SWidget {
     
     private var menuBarItem: NSStatusItem? = nil
     private var originX: CGFloat
+    private var pendingLengthUpdate: DispatchWorkItem? = nil
     
     public init(_ type: widget_t, defaultWidget: widget_t, module: String, item: widget_p, image: NSImage) {
         self.type = type
@@ -283,12 +416,26 @@ public class SWidget {
         self.originX = item.frame.origin.x
         
         self.item.widthHandler = { [weak self] in
-            self?.sizeCallback?()
-            if let s = self, let item = s.menuBarItem, let width: CGFloat = self?.item.frame.width, item.length != width {
-                item.length = width
-            }
+            guard let self else { return }
+            self.sizeCallback?()
+            self.scheduleLengthUpdate()
         }
         self.item.identifier = NSUserInterfaceItemIdentifier(self.type.rawValue)
+    }
+
+    deinit {
+        self.pendingLengthUpdate?.cancel()
+    }
+
+    private func scheduleLengthUpdate() {
+        self.pendingLengthUpdate?.cancel()
+
+        let update = DispatchWorkItem { [weak self] in
+            guard let self, let item = self.menuBarItem else { return }
+            item.updateLength(self.item.frame.width)
+        }
+        self.pendingLengthUpdate = update
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: update)
     }
     
     // show item in the menu bar
@@ -339,17 +486,7 @@ public class SWidget {
                 if self.item.frame.origin.x != self.originX {
                     self.item.setFrameOrigin(NSPoint(x: self.originX, y: self.item.frame.origin.y))
                 }
-                self.menuBarItem?.button?.addSubview(self.item)
-                self.menuBarItem?.button?.image = NSImage()
-                self.menuBarItem?.button?.toolTip = "\(localizedString(self.module)): \(self.type.name())"
-                
-                if let item = self.menuBarItem, !item.isVisible {
-                    self.menuBarItem?.isVisible = true
-                }
-                
-                self.menuBarItem?.button?.target = self
-                self.menuBarItem?.button?.action = #selector(self.togglePopup)
-                self.menuBarItem?.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
+                self.attachToMenuBar(retries: 30)
             })
         } else {
             DispatchQueue.main.async(execute: {
@@ -361,6 +498,32 @@ public class SWidget {
                 self.menuBarItem = nil
             })
         }
+    }
+
+    private func attachToMenuBar(retries: Int) {
+        guard let item = self.menuBarItem, let button = item.button else { return }
+        if !item.hasValidBackingWindow {
+            guard retries > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.attachToMenuBar(retries: retries - 1)
+            }
+            return
+        }
+
+        if self.item.superview !== button {
+            self.item.removeFromSuperview()
+            button.addSubview(self.item)
+        }
+        button.image = NSImage()
+        button.toolTip = "\(localizedString(self.module)): \(self.type.name())"
+        if !item.isVisible {
+            item.isVisible = true
+        }
+        button.target = self
+        button.action = #selector(self.togglePopup)
+        button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+        item.updateLength(self.item.frame.width)
+        (self.item as? WidgetWrapper)?.redraw()
     }
     
     @objc private func togglePopup() {
@@ -382,6 +545,7 @@ public class MenuBar {
     private var moduleName: String
     private var menuBarItem: NSStatusItem? = nil
     private var queue: DispatchQueue
+    private var pendingWidthRecalculation: DispatchWorkItem? = nil
     
     private var combinedModules: Bool {
         Store.shared.bool(key: "CombinedModules", defaultValue: false)
@@ -425,6 +589,7 @@ public class MenuBar {
     }
     
     deinit {
+        self.pendingWidthRecalculation?.cancel()
         NotificationCenter.default.removeObserver(self, name: .toggleOneView, object: nil)
         NotificationCenter.default.removeObserver(self, name: .widgetRearrange, object: nil)
     }
@@ -485,16 +650,7 @@ public class MenuBar {
                 DispatchQueue.main.async(execute: {
                     self.menuBarItem?.autosaveName = self.moduleName
                 })
-                self.menuBarItem?.isVisible = true
-                
-                self.menuBarItem?.button?.addSubview(self.view)
-                self.menuBarItem?.button?.image = NSImage()
-                self.menuBarItem?.button?.toolTip = "\(localizedString(self.moduleName))"
-                self.menuBarItem?.button?.target = self
-                self.menuBarItem?.button?.action = #selector(self.togglePopup)
-                self.menuBarItem?.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
-                
-                self.recalculateWidth()
+                self.configureMenuBarButton(retries: 30)
             } else if let item = self.menuBarItem {
                 saveNSStatusItemPosition(id: self.moduleName)
                 NSStatusBar.system.removeStatusItem(item)
@@ -502,16 +658,62 @@ public class MenuBar {
             }
         })
     }
+
+    private func configureMenuBarButton(retries: Int) {
+        guard let item = self.menuBarItem, let button = item.button else { return }
+        if !item.hasValidBackingWindow {
+            guard retries > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.configureMenuBarButton(retries: retries - 1)
+            }
+            return
+        }
+
+        if !item.isVisible {
+            item.isVisible = true
+        }
+        if self.view.superview !== button {
+            self.view.removeFromSuperview()
+            button.addSubview(self.view)
+        }
+        button.image = NSImage()
+        button.toolTip = "\(localizedString(self.moduleName))"
+        button.target = self
+        button.action = #selector(self.togglePopup)
+        button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+        self.recalculateWidth(immediate: true)
+    }
     
-    private func recalculateWidth() {
+    private func recalculateWidth(immediate: Bool = false) {
+        self.pendingWidthRecalculation?.cancel()
+
+        if immediate {
+            self.recalculateWidthNow()
+            return
+        }
+
+        let update = DispatchWorkItem { [weak self] in
+            self?.recalculateWidthNow()
+        }
+        self.pendingWidthRecalculation = update
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: update)
+    }
+
+    private func recalculateWidthNow() {
         guard self.oneView, self.active else { return }
+        guard let item = self.menuBarItem, item.hasValidBackingWindow else { return }
         
         let w = self.activeWidgets.isEmpty ? 0 : self.activeWidgets.map({ $0.item.frame.width }).reduce(0, +) +
             (CGFloat(self.activeWidgets.count - 1) * Constants.Widget.spacing) +
             Constants.Widget.spacing * 2
-        self.menuBarItem?.length = w
-        self.view.setFrameOrigin(NSPoint(x: 0, y: 0))
-        self.view.setFrameSize(NSSize(width: w, height: Constants.Widget.height))
+        item.updateLength(w)
+        if self.view.frame.origin != .zero {
+            self.view.setFrameOrigin(.zero)
+        }
+        let size = NSSize(width: w, height: Constants.Widget.height)
+        if self.view.frame.size != size {
+            self.view.setFrameSize(size)
+        }
         
         self.view.recalculate(self.sortedWidgets)
         self.callback?()
@@ -571,7 +773,10 @@ public class MenuBarView: NSView {
     }
     
     public func addWidget(_ view: NSView) {
-        self.addSubview(view)
+        if view.superview !== self {
+            view.removeFromSuperview()
+            self.addSubview(view)
+        }
     }
     
     public func removeWidget(type: widget_t) {
@@ -584,7 +789,10 @@ public class MenuBarView: NSView {
         var x: CGFloat = Constants.Widget.spacing
         list.forEach { (type: widget_t) in
             if let view = self.subviews.first(where: { $0.identifier == NSUserInterfaceItemIdentifier(type.rawValue) }) {
-                view.setFrameOrigin(NSPoint(x: x, y: view.frame.origin.y))
+                let origin = NSPoint(x: x, y: view.frame.origin.y)
+                if view.frame.origin != origin {
+                    view.setFrameOrigin(origin)
+                }
                 x = view.frame.origin.x + view.frame.width + Constants.Widget.spacing
             }
         }

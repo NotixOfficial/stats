@@ -918,11 +918,49 @@ public func localizedString(_ key: String, _ params: String..., comment: String 
     return string
 }
 
+private enum TemperatureFormatting {
+    static let systemUnit: UnitTemperature = {
+        let formatter = MeasurementFormatter()
+        let measurement = Measurement(value: 0, unit: UnitTemperature.celsius)
+        return formatter.string(from: measurement).hasSuffix("C") ? .celsius : .fahrenheit
+    }()
+
+    private static let lock = NSLock()
+    private static var formatters: [Int: MeasurementFormatter] = [:]
+
+    static func string(
+        value: Double,
+        defaultUnit: UnitTemperature,
+        targetUnit: UnitTemperature,
+        fractionDigits: Int
+    ) -> String {
+        let digits = max(0, fractionDigits)
+
+        self.lock.lock()
+        defer { self.lock.unlock() }
+
+        let formatter: MeasurementFormatter
+        if let cached = self.formatters[digits] {
+            formatter = cached
+        } else {
+            let created = MeasurementFormatter()
+            created.locale = Locale(identifier: "en_US")
+            created.numberFormatter.maximumFractionDigits = digits
+            created.numberFormatter.minimumFractionDigits = digits
+            created.unitOptions = .providedUnit
+            self.formatters[digits] = created
+            formatter = created
+        }
+
+        var measurement = Measurement(value: value, unit: defaultUnit)
+        measurement.convert(to: targetUnit)
+        return formatter.string(from: measurement)
+    }
+}
+
 public extension UnitTemperature {
     static var system: UnitTemperature {
-        let measureFormatter = MeasurementFormatter()
-        let measurement = Measurement(value: 0, unit: UnitTemperature.celsius)
-        return measureFormatter.string(from: measurement).hasSuffix("C") ? .celsius : .fahrenheit
+        TemperatureFormatting.systemUnit
     }
     
     static var current: UnitTemperature {
@@ -938,18 +976,12 @@ public extension UnitTemperature {
 }
 
 public func temperature(_ value: Double, defaultUnit: UnitTemperature = UnitTemperature.celsius, fractionDigits: Int = 0) -> String {
-    let formatter = MeasurementFormatter()
-    formatter.locale = Locale.init(identifier: "en_US")
-    formatter.numberFormatter.maximumFractionDigits = fractionDigits
-    if fractionDigits != 0 {
-        formatter.numberFormatter.minimumFractionDigits = fractionDigits
-    }
-    formatter.unitOptions = .providedUnit
-    
-    var measurement = Measurement(value: value, unit: defaultUnit)
-    measurement.convert(to: UnitTemperature.current)
-    
-    return formatter.string(from: measurement)
+    TemperatureFormatting.string(
+        value: value,
+        defaultUnit: defaultUnit,
+        targetUnit: UnitTemperature.current,
+        fractionDigits: fractionDigits
+    )
 }
 
 public func sysctlByName(_ name: String) -> Int64 {

@@ -413,7 +413,7 @@ public class BatteryWidget: WidgetWrapper {
         
         if updated {
             DispatchQueue.main.async(execute: {
-                self.display()
+                self.redraw()
             })
         }
     }
@@ -459,31 +459,31 @@ public class BatteryWidget: WidgetWrapper {
         guard let key = sender.representedObject as? String else { return }
         self.additional = key
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_additional", value: key)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleHideAdditionalWhenFull(_ sender: NSControl) {
         self.hideAdditionalWhenFull = controlState(sender)
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_hideAdditionalWhenFull", value: self.hideAdditionalWhenFull)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleColor(_ sender: NSControl) {
         self.colorState = controlState(sender)
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_color", value: self.colorState)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleXLSize(_ sender: NSControl) {
         self.xlSizeState = controlState(sender)
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_xlSize", value: self.xlSizeState)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleChargerIconInside(_ sender: NSControl) {
         self.chargerIconInside = controlState(sender)
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_chargerInside", value: self.chargerIconInside)
-        self.display()
+        self.redraw()
     }
 }
 
@@ -644,7 +644,7 @@ public class BatteryDetailsWidget: WidgetWrapper {
         
         if updated {
             DispatchQueue.main.async(execute: {
-                self.display()
+                self.redraw()
             })
         }
     }
@@ -671,6 +671,6 @@ public class BatteryDetailsWidget: WidgetWrapper {
             self.mode = key
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_mode", value: key)
-        self.display()
+        self.redraw()
     }
 }

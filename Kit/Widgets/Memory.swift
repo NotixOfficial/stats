@@ -144,7 +144,7 @@ public class MemoryWidget: WidgetWrapper {
         }
         
         DispatchQueue.main.async(execute: {
-            self.display()
+            self.redraw()
         })
     }
     
@@ -156,7 +156,7 @@ public class MemoryWidget: WidgetWrapper {
         }
         guard updated else { return }
         DispatchQueue.main.async(execute: {
-            self.display()
+            self.redraw()
         })
     }
     
@@ -185,19 +185,19 @@ public class MemoryWidget: WidgetWrapper {
     @objc private func toggleOrder(_ sender: NSControl) {
         self.orderReversedState = controlState(sender)
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_orderReversed", value: self.orderReversedState)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleSymbols(_ sender: NSControl) {
         self.symbolsState = controlState(sender)
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_symbols", value: self.symbolsState)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleColor(_ sender: NSMenuItem) {
         guard let key = sender.representedObject as? String else { return }
         self.colorState = SColor.fromString(key, defaultValue: self.colorState)
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_color", value: self.colorState.key)
-        self.display()
+        self.redraw()
     }
 }

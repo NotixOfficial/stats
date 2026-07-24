@@ -122,11 +122,29 @@ public class ChartView: NSView {
         self.stateQueue = DispatchQueue(label: queueLabel, attributes: .concurrent)
         super.init(frame: frame)
         self.wantsLayer = true
-        self.layerContentsRedrawPolicy = .onSetNeedsDisplay
+        self.layerContentsRedrawPolicy = .never
+        self.layer?.contentsGravity = .center
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if self.window != nil {
+            self.renderToLayer()
+        }
+    }
+
+    public override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        self.renderToLayer()
+    }
+
+    public override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        self.renderToLayer()
     }
     
     fileprivate func read<T>(_ block: () -> T) -> T {
@@ -136,11 +154,54 @@ public class ChartView: NSView {
     fileprivate func write(_ block: @escaping () -> Void) {
         self.stateQueue.async(flags: .barrier, execute: block)
     }
+
+    public func renderToLayer() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.renderToLayer()
+            }
+            return
+        }
+        guard let layer = self.layer, self.bounds.width > 0, self.bounds.height > 0 else { return }
+
+        let scale = self.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let pixelWidth = Int((self.bounds.width * scale).rounded())
+        let pixelHeight = Int((self.bounds.height * scale).rounded())
+        guard pixelWidth > 0, pixelHeight > 0 else { return }
+
+        guard let context = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
+        ) else { return }
+
+        context.scaleBy(x: scale, y: scale)
+        let graphicsContext = NSGraphicsContext(cgContext: context, flipped: self.isFlipped)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        self.effectiveAppearance.performAsCurrentDrawingAppearance {
+            self.draw(self.bounds)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let image = context.makeImage() else { return }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.contents = image
+        layer.contentsScale = scale
+        CATransaction.commit()
+    }
     
     fileprivate func displayIfVisible() {
         self.onMain { [weak self] in
             guard let self, self.window?.isVisible ?? false else { return }
-            self.needsDisplay = true
+            self.renderToLayer()
         }
     }
     
@@ -184,7 +245,7 @@ public class ChartView: NSView {
             if self.animationsAllowed {
                 self.fadeTransition()
             }
-            self.needsDisplay = true
+            self.renderToLayer()
         }
     }
 }
@@ -572,7 +633,7 @@ public class LineChartView: ChartView {
             let state = self.read { (n: self.points.count, yLegend: self.yLegend) }
             let dx = state.n > 1 ? (self.bounds.width - (state.yLegend ? 30 : 0)) / CGFloat(state.n - 1) : 0
             guard dx >= 1, !self.stop, self.animationsAllowed else {
-                self.needsDisplay = true
+                self.renderToLayer()
                 return
             }
             let now = CACurrentMediaTime()
@@ -581,7 +642,7 @@ public class LineChartView: ChartView {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             self.slideTransition(dx, duration: min(max(dt, 0.1), 1.0))
-            self.display()
+            self.renderToLayer()
             CATransaction.commit()
         }
     }
@@ -713,25 +774,25 @@ public class LineChartView: ChartView {
     public override func mouseEntered(with event: NSEvent) {
         guard self.tooltipEnabledSnapshot else { return }
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.needsDisplay = true
+        self.renderToLayer()
     }
     
     public override func mouseMoved(with event: NSEvent) {
         guard self.tooltipEnabledSnapshot else { return }
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.needsDisplay = true
+        self.renderToLayer()
     }
     
     public override func mouseDragged(with event: NSEvent) {
         guard self.tooltipEnabledSnapshot else { return }
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.needsDisplay = true
+        self.renderToLayer()
     }
     
     public override func mouseExited(with event: NSEvent) {
         guard self.tooltipEnabledSnapshot else { return }
         self.cursor = nil
-        self.needsDisplay = true
+        self.renderToLayer()
     }
     
     public override func mouseDown(with: NSEvent) {
@@ -841,8 +902,8 @@ public class NetworkChartView: ChartView {
         self.inChart.setFrameOrigin(self.reversedOrder ? topFrame : bottomFrame)
         self.outChart.setFrameOrigin(self.reversedOrder ? bottomFrame : topFrame)
         
-        self.inChart.display()
-        self.outChart.display()
+        self.inChart.renderToLayer()
+        self.outChart.renderToLayer()
     }
     
     public func setColors(in inColor: NSColor? = nil, out outColor: NSColor? = nil) {
@@ -1330,19 +1391,19 @@ public class ColumnChartView: ChartView {
     
     public override func mouseEntered(with event: NSEvent) {
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.display()
+        self.renderToLayer()
     }
     public override func mouseMoved(with event: NSEvent) {
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.display()
+        self.renderToLayer()
     }
     public override func mouseDragged(with event: NSEvent) {
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.display()
+        self.renderToLayer()
     }
     public override func mouseExited(with event: NSEvent) {
         self.cursor = nil
-        self.display()
+        self.renderToLayer()
     }
     
     public override func updateTrackingAreas() {
@@ -1450,17 +1511,17 @@ public class GridChartView: ChartView {
     
     public override func mouseEntered(with event: NSEvent) {
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.needsDisplay = true
+        self.renderToLayer()
     }
     
     public override func mouseMoved(with event: NSEvent) {
         self.cursor = convert(event.locationInWindow, from: nil)
-        self.needsDisplay = true
+        self.renderToLayer()
     }
     
     public override func mouseExited(with event: NSEvent) {
         self.cursor = nil
-        self.needsDisplay = true
+        self.renderToLayer()
     }
     
     public override func updateTrackingAreas() {

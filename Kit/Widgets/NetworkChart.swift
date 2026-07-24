@@ -269,7 +269,7 @@ public class NetworkChart: WidgetWrapper {
         }
         DispatchQueue.main.async(execute: {
             if self.window?.isVisible ?? false {
-                self.display()
+                self.redraw()
             }
         })
     }
@@ -332,7 +332,7 @@ public class NetworkChart: WidgetWrapper {
             self.labelState = state
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_label", value: self.labelState)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleBox(_ sender: NSControl) {
@@ -350,7 +350,7 @@ public class NetworkChart: WidgetWrapper {
             Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_frame", value: self.frameState)
         }
         
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleFrame(_ sender: NSControl) {
@@ -368,7 +368,7 @@ public class NetworkChart: WidgetWrapper {
             Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_box", value: self.boxState)
         }
         
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleHistoryCount(_ sender: NSMenuItem) {
@@ -384,7 +384,7 @@ public class NetworkChart: WidgetWrapper {
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_historyCount", value: self.historyCount)
         
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleDownloadColor(_ sender: NSMenuItem) {
@@ -393,7 +393,7 @@ public class NetworkChart: WidgetWrapper {
             self.downloadColor = SColor.fromString(key, defaultValue: self.downloadColor)
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_downloadColor", value: self.downloadColor.key)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleUploadColor(_ sender: NSMenuItem) {
@@ -402,7 +402,7 @@ public class NetworkChart: WidgetWrapper {
             self.uploadColor = SColor.fromString(key, defaultValue: self.uploadColor)
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_uploadColor", value: self.uploadColor.key)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleScale(_ sender: NSMenuItem) {
@@ -412,7 +412,7 @@ public class NetworkChart: WidgetWrapper {
             self.scaleState = value
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_scale", value: key)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleReverseOrder(_ sender: NSControl) {
@@ -421,6 +421,6 @@ public class NetworkChart: WidgetWrapper {
             self.reverseOrderState = state
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_reverseOrder", value: self.reverseOrderState)
-        self.display()
+        self.redraw()
     }
 }

@@ -155,7 +155,7 @@ public class Mini: WidgetWrapper {
         }
         guard updated else { return }
         DispatchQueue.main.async(execute: {
-            self.display()
+            self.redraw()
         })
     }
     
@@ -167,7 +167,7 @@ public class Mini: WidgetWrapper {
         }
         guard updated else { return }
         DispatchQueue.main.async(execute: {
-            self.needsDisplay = true
+            self.redraw()
         })
     }
     
@@ -183,7 +183,7 @@ public class Mini: WidgetWrapper {
         }
         guard updated else { return }
         DispatchQueue.main.async(execute: {
-            self.needsDisplay = true
+            self.redraw()
         })
     }
     
@@ -195,7 +195,7 @@ public class Mini: WidgetWrapper {
         }
         guard updated else { return }
         DispatchQueue.main.async(execute: {
-            self.display()
+            self.redraw()
         })
     }
     
@@ -207,7 +207,7 @@ public class Mini: WidgetWrapper {
         }
         guard updated else { return }
         DispatchQueue.main.async(execute: {
-            self.display()
+            self.redraw()
         })
     }
     
@@ -240,13 +240,13 @@ public class Mini: WidgetWrapper {
         guard let key = sender.representedObject as? String else { return }
         self.colorState = SColor.fromString(key, defaultValue: self.colorState)
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_color", value: self.colorState.key)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleLabel(_ sender: NSControl) {
         self.labelState = controlState(sender)
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_label", value: self.labelState)
-        self.display()
+        self.redraw()
     }
     
     @objc private func toggleAlignment(_ sender: NSMenuItem) {
@@ -255,6 +255,6 @@ public class Mini: WidgetWrapper {
             self.alignmentState = newAlignment.key
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_alignment", value: key)
-        self.display()
+        self.redraw()
     }
 }

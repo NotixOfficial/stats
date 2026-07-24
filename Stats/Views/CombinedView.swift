@@ -16,6 +16,8 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     private var menuBarItem: NSStatusItem? = nil
     private var view: NSView = NSView(frame: NSRect(x: 0, y: 0, width: 0, height: Constants.Widget.height))
     private var popup: PopupWindow? = nil
+    private var pendingRecalculation: DispatchWorkItem? = nil
+    private let separatorIdentifier = NSUserInterfaceItemIdentifier("CombinedModules.separator")
     
     private var status: Bool {
         Store.shared.bool(key: "CombinedModules", defaultValue: false)
@@ -42,9 +44,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         modules.forEach { (m: Module) in
             m.menuBar.callback = { [weak self] in
                 if let s = self?.status, s {
-                    DispatchQueue.main.async(execute: {
-                        self?.recalculate()
-                    })
+                    self?.scheduleRecalculation()
                 }
             }
         }
@@ -62,6 +62,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     deinit {
+        self.pendingRecalculation?.cancel()
         NotificationCenter.default.removeObserver(self, name: .toggleOneView, object: nil)
         NotificationCenter.default.removeObserver(self, name: .moduleRearrange, object: nil)
         NotificationCenter.default.removeObserver(self, name: .combinedModulesPopup, object: nil)
@@ -73,9 +74,25 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         DispatchQueue.main.async(execute: {
             self.menuBarItem?.autosaveName = "CombinedModules"
         })
-        self.menuBarItem?.button?.addSubview(self.view)
-        self.menuBarItem?.button?.image = NSImage()
-        self.menuBarItem?.button?.toolTip = localizedString("Combined modules")
+        self.configureMenuBarButton(retries: 30)
+    }
+
+    private func configureMenuBarButton(retries: Int) {
+        guard let item = self.menuBarItem, let button = item.button else { return }
+        if !item.hasValidBackingWindow {
+            guard retries > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.configureMenuBarButton(retries: retries - 1)
+            }
+            return
+        }
+
+        if self.view.superview !== button {
+            self.view.removeFromSuperview()
+            button.addSubview(self.view)
+        }
+        button.image = NSImage()
+        button.toolTip = localizedString("Combined modules")
         
         if !self.combinedModulesPopup {
             self.activeModules.forEach { (m: Module) in
@@ -93,17 +110,16 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
                 }
             }
         } else {
-            self.menuBarItem?.button?.target = self
-            self.menuBarItem?.button?.action = #selector(self.togglePopup)
-            self.menuBarItem?.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
+            button.target = self
+            button.action = #selector(self.togglePopup)
+            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
         }
         
-        DispatchQueue.main.async(execute: {
-            self.recalculate()
-        })
+        self.recalculate()
     }
     
     public func disable() {
+        self.pendingRecalculation?.cancel()
         self.activeModules.forEach { (m: Module) in
             m.menuBar.widgets.forEach { w in
                 w.item.onClick = nil
@@ -114,29 +130,59 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         }
         self.menuBarItem = nil
     }
+
+    private func scheduleRecalculation() {
+        self.pendingRecalculation?.cancel()
+
+        let update = DispatchWorkItem { [weak self] in
+            self?.recalculate()
+        }
+        self.pendingRecalculation = update
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: update)
+    }
     
     private func recalculate() {
-        self.view.subviews.forEach({ $0.removeFromSuperview() })
-
         let visibleModules = self.activeModules.filter({ !$0.menuBar.activeWidgets.isEmpty })
+        let visibleViews = visibleModules.map({ $0.menuBar.view })
+
+        self.view.subviews.forEach { subview in
+            if subview.identifier == self.separatorIdentifier ||
+                !visibleViews.contains(where: { $0 === subview }) {
+                subview.removeFromSuperview()
+            }
+        }
+
         var w: CGFloat = 0
         visibleModules.enumerated().forEach { (i, m) in
             if i != 0 {
                 w += self.spacing
                 if self.separator {
                     let separator = NSView(frame: NSRect(x: w, y: 3, width: 1, height: Constants.Widget.height-6))
+                    separator.identifier = self.separatorIdentifier
                     separator.wantsLayer = true
                     separator.layer?.backgroundColor = (separator.isDarkMode ? NSColor.white : NSColor.black).cgColor
                     self.view.addSubview(separator)
                     w += 3 + self.spacing
                 }
             }
-            self.view.addSubview(m.menuBar.view)
-            m.menuBar.view.setFrameOrigin(NSPoint(x: w, y: 0))
-            w += m.menuBar.view.frame.width
+
+            let moduleView = m.menuBar.view
+            if moduleView.superview !== self.view {
+                moduleView.removeFromSuperview()
+                self.view.addSubview(moduleView)
+            }
+            let origin = NSPoint(x: w, y: 0)
+            if moduleView.frame.origin != origin {
+                moduleView.setFrameOrigin(origin)
+            }
+            w += moduleView.frame.width
         }
-        self.view.setFrameSize(NSSize(width: w, height: self.view.frame.height))
-        self.menuBarItem?.length = w
+
+        let size = NSSize(width: w, height: self.view.frame.height)
+        if self.view.frame.size != size {
+            self.view.setFrameSize(size)
+        }
+        self.menuBarItem?.updateLength(w)
     }
     
     // call when popup appear/disappear
@@ -184,7 +230,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     @objc private func listenForModuleRearrrange() {
-        self.recalculate()
+        self.scheduleRecalculation()
     }
     
     @objc private func listenCombinedModulesPopup() {
