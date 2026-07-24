@@ -160,20 +160,11 @@ extension AppDelegate {
     }
     
     internal func setup(completion: @escaping () -> Void) {
-        if Store.shared.exist(key: "setupProcess") || Store.shared.exist(key: "runAtLoginInitialized") {
-            completion()
-            return
+        if !Store.shared.exist(key: "setupProcess") {
+            debug("Setup completed automatically with default configuration")
+            Store.shared.set(key: "setupProcess", value: true)
         }
-        
-        debug("showing the setup window")
-        
-        let window = self.ensureSetupWindow()
-        window.show()
-        window.finishHandler = {
-            debug("setup is finished, starting the app")
-            completion()
-        }
-        Store.shared.set(key: "setupProcess", value: true)
+        completion()
     }
     
     internal func checkForNewVersion(silent: Bool = false) {
