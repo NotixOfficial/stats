@@ -30,6 +30,15 @@ public enum SensorType: String, Codable {
     case fan = "Fans"
 }
 
+internal enum PowerSensorSamplingMode: String {
+    case always
+    case onDemand
+}
+internal let PowerSensorSamplingModes: [KeyValue_t] = [
+    KeyValue_t(key: PowerSensorSamplingMode.always.rawValue, value: "Always"),
+    KeyValue_t(key: PowerSensorSamplingMode.onDemand.rawValue, value: "On demand")
+]
+
 public protocol Sensor_p {
     var key: String { get }
     var name: String { get }

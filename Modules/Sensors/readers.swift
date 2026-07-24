@@ -14,8 +14,12 @@ import Kit
 
 internal class SensorsReader: Reader<Sensors_List> {
     static let HIDtypes: [SensorType] = [.temperature, .voltage]
+    static let IOPowerSensorKeys: Set<String> = [
+        "CPU Power", "GPU Power", "ANE Power", "RAM Power", "PCI Power"
+    ]
     
     internal var list: Sensors_List = Sensors_List()
+    internal var powerSensorDemand: () -> Bool = { true }
     
     private var lastRead: Date = Date()
     private let firstRead: Date = Date()
@@ -29,16 +33,11 @@ internal class SensorsReader: Reader<Sensors_List> {
     private var channels: CFMutableDictionary? = nil
     private var subscription: IOReportSubscriptionRef? = nil
     private var powers: (CPU: Double, GPU: Double, ANE: Double, RAM: Double, PCI: Double) = (0.0, 0.0, 0.0, 0.0, 0.0)
+    private var IOReportSamplingActive: Bool = false
     
     init(callback: @escaping (T?) -> Void = {_ in }) {
         self.unknownSensorsState = Store.shared.bool(key: "Sensors_unknown", defaultValue: false)
         super.init(.sensors, callback: callback)
-        
-        self.channels = self.getChannels()
-        var dict: Unmanaged<CFMutableDictionary>?
-        self.subscription = IOReportCreateSubscription(nil, self.channels, &dict, 0, nil)
-        dict?.release()
-        
         self.list.sensors = self.sensors()
     }
     
@@ -181,7 +180,8 @@ internal class SensorsReader: Reader<Sensors_List> {
             }
         }
         
-        if let (cpu, gpu, ane, ram, pci) = self.IOSensors() {
+        let shouldSampleIOReport = self.shouldSampleIOReport
+        if shouldSampleIOReport, let (cpu, gpu, ane, ram, pci) = self.IOSensors() {
             if let idx = indexByKey["CPU Power"] {
                 sensors[idx].value = cpu
             }
@@ -197,6 +197,8 @@ internal class SensorsReader: Reader<Sensors_List> {
             if let idx = indexByKey["PCI Power"] {
                 sensors[idx].value = pci
             }
+        } else if !shouldSampleIOReport {
+            self.resetIOReportBaseline()
         }
         #endif
         
@@ -514,6 +516,40 @@ extension SensorsReader {
 // MARK: - Apple Silicon power sensors
 
 extension SensorsReader {
+    private var powerSensorSamplingMode: PowerSensorSamplingMode {
+        PowerSensorSamplingMode(
+            rawValue: Store.shared.string(
+                key: "Sensors_powerSensorSampling",
+                defaultValue: PowerSensorSamplingMode.always.rawValue
+            )
+        ) ?? .always
+    }
+
+    private var shouldSampleIOReport: Bool {
+        self.powerSensorSamplingMode == .always || self.powerSensorDemand()
+    }
+
+    private func ensureIOReportSubscription() -> Bool {
+        if self.subscription != nil {
+            return true
+        }
+
+        self.channels = self.getChannels()
+        guard self.channels != nil else { return false }
+
+        var dict: Unmanaged<CFMutableDictionary>?
+        self.subscription = IOReportCreateSubscription(nil, self.channels, &dict, 0, nil)
+        dict?.release()
+        return self.subscription != nil
+    }
+
+    private func resetIOReportBaseline() {
+        guard self.IOReportSamplingActive || self.lastIOSensorsRead != nil else { return }
+        self.IOReportSamplingActive = false
+        self.lastIOSensorsRead = nil
+        self.powers = (0, 0, 0, 0, 0)
+    }
+
     private func getChannels() -> CFMutableDictionary? {
         let channelNames: [(String, String?)] = [("Energy Model", nil)]
         
@@ -539,7 +575,7 @@ extension SensorsReader {
     }
     
     private func initIOSensors() -> [Sensor] {
-        guard let (cpu, gpu, ane, ram, pci) = self.IOSensors() else { return [] }
+        let (cpu, gpu, ane, ram, pci) = self.IOSensors() ?? (0, 0, 0, 0, 0)
         return [
             Sensor(key: "CPU Power", name: "CPU Power", value: cpu, group: .CPU, type: .power, platforms: Platform.apple, isComputed: true),
             Sensor(key: "GPU Power", name: "GPU Power", value: gpu, group: .GPU, type: .power, platforms: Platform.apple, isComputed: true),
@@ -555,11 +591,13 @@ extension SensorsReader {
     }
 
     private func IOSensors() -> (Double, Double, Double, Double, Double)? {
-        guard let reportSample = IOReportCreateSamples(self.subscription, self.channels, nil)?.takeRetainedValue(),
+        guard self.ensureIOReportSubscription(),
+              let reportSample = IOReportCreateSamples(self.subscription, self.channels, nil)?.takeRetainedValue(),
               let dict = reportSample as? [String: Any],
               let channelsList = dict["IOReportChannels"] as? NSArray else {
             return nil
         }
+        self.IOReportSamplingActive = true
         let items = channelsList as CFArray
         let now = Date()
         
@@ -595,11 +633,11 @@ extension SensorsReader {
         
         guard let lastIOSensorsRead = self.lastIOSensorsRead else {
             self.lastIOSensorsRead = now
-            return (0, 0, 0, 0, 0)
+            return nil
         }
         guard prevCPU != 0 else {
             self.lastIOSensorsRead = now
-            return (0, 0, 0, 0, 0)
+            return nil
         } // omit first read
         
         let elapsed = now.timeIntervalSince(lastIOSensorsRead)

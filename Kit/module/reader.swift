@@ -231,7 +231,7 @@ open class Reader<T: Codable>: NSObject, ReaderInternal_p {
             guard let self, self.alignGeneration == generation, self.repeatTask == nil else { return }
 
             DispatchQueue.global(qos: .background).async { self.read() }
-            self.repeatTask = Repeater(seconds: Int(interval)) { [weak self] in
+            self.repeatTask = Repeater(seconds: Int(interval), adaptive: false) { [weak self] in
                 self?.read()
             }
             self.repeatTask?.start()

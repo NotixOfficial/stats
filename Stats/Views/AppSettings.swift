@@ -56,6 +56,7 @@ class ApplicationSettings: NSStackView {
     }
     
     private var updateSelector: NSPopUpButton?
+    private var powerModeSelector: NSPopUpButton?
     private var startAtLoginBtn: NSSwitch?
     private var remoteControlBtn: NSSwitch?
     private var remoteUpdatesBtn: NSSwitch?
@@ -101,9 +102,15 @@ class ApplicationSettings: NSStackView {
             action: #selector(self.toggleLaunchAtLogin),
             state: LaunchAtLogin.isEnabled
         )
+        self.powerModeSelector = selectView(
+            action: #selector(self.togglePowerMode),
+            items: PowerModes,
+            selected: PowerPolicy.shared.mode.rawValue
+        )
         
         scrollView.stackView.addArrangedSubview(PreferencesSection([
             PreferencesRow(localizedString("Check for updates"), component: self.updateSelector!),
+            PreferencesRow(localizedString("Power mode"), component: self.powerModeSelector!),
             PreferencesRow(localizedString("Temperature"), component: selectView(
                 action: #selector(self.toggleTemperatureUnits),
                 items: TemperatureUnits,
@@ -254,6 +261,16 @@ class ApplicationSettings: NSStackView {
             }
         }
         self.updateSelector?.selectItem(at: idx)
+
+        idx = self.powerModeSelector?.indexOfSelectedItem ?? 0
+        if let items = self.powerModeSelector?.menu?.items {
+            for (i, item) in items.enumerated() {
+                if let obj = item.representedObject as? String, obj == PowerPolicy.shared.mode.rawValue {
+                    idx = i
+                }
+            }
+        }
+        self.powerModeSelector?.selectItem(at: idx)
     }
     
     private func informationView() -> NSView {
@@ -344,6 +361,11 @@ class ApplicationSettings: NSStackView {
         self.temperatureUnitsValue = key
     }
     
+    @objc private func togglePowerMode(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String, let mode = PowerMode(rawValue: key) else { return }
+        PowerPolicy.shared.mode = mode
+    }
+
     @objc private func toggleDock(_ sender: NSButton) {
         let state = sender.state
         Store.shared.set(key: "dockIcon", value: state == NSControl.StateValue.on)

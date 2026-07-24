@@ -19,10 +19,12 @@ internal class Settings: NSStackView, Settings_v {
     private var fansSyncState: Bool = false
     private var unknownSensorsState: Bool = false
     private var fanValueState: FanValue = .percentage
+    private var powerSensorSamplingMode: PowerSensorSamplingMode = .always
     
     public var callback: (() -> Void) = {}
     public var HIDcallback: (() -> Void) = {}
     public var unknownCallback: (() -> Void) = {}
+    public var powerSensorSamplingCallback: (() -> Void) = {}
     public var setInterval: ((_ value: Int) -> Void) = {_ in }
     public var selectedHandler: (String) -> Void = {_ in }
     
@@ -46,6 +48,12 @@ internal class Settings: NSStackView, Settings_v {
         self.unknownSensorsState = Store.shared.bool(key: "\(self.title)_unknown", defaultValue: self.unknownSensorsState)
         self.fanValueState = FanValue(rawValue: Store.shared.string(key: "\(self.title)_fanValue", defaultValue: self.fanValueState.rawValue)) ?? .percentage
         self.selectedSensor = Store.shared.string(key: "\(self.title)_sensor", defaultValue: self.selectedSensor)
+        self.powerSensorSamplingMode = PowerSensorSamplingMode(
+            rawValue: Store.shared.string(
+                key: "\(self.title)_powerSensorSampling",
+                defaultValue: self.powerSensorSamplingMode.rawValue
+            )
+        ) ?? .always
         
         self.addArrangedSubview(PreferencesSection([
             PreferencesRow(localizedString("Update interval"), component: selectView(
@@ -81,6 +89,11 @@ internal class Settings: NSStackView, Settings_v {
             sensorsRows.append(PreferencesRow(localizedString("HID sensors"), component: switchView(
                 action: #selector(self.toggleHID),
                 state: self.hidState
+            )))
+            sensorsRows.append(PreferencesRow(localizedString("Power sensor sampling"), component: selectView(
+                action: #selector(self.togglePowerSensorSampling),
+                items: PowerSensorSamplingModes,
+                selected: self.powerSensorSamplingMode.rawValue
             )))
         }
         sensorsRows.append(PreferencesRow(localizedString("Sensor to show"), id: "active_sensor", component: selectView(
@@ -180,6 +193,13 @@ internal class Settings: NSStackView, Settings_v {
         self.hidState = controlState(sender)
         Store.shared.set(key: "\(self.title)_hid", value: self.hidState)
         self.HIDcallback()
+    }
+    @objc private func togglePowerSensorSampling(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String,
+              let mode = PowerSensorSamplingMode(rawValue: key) else { return }
+        self.powerSensorSamplingMode = mode
+        Store.shared.set(key: "\(self.title)_powerSensorSampling", value: mode.rawValue)
+        self.powerSensorSamplingCallback()
     }
     @objc private func toggleFansSync(_ sender: NSControl) {
         self.fansSyncState = controlState(sender)

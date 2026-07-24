@@ -584,7 +584,7 @@ public class RemoteAuth {
             self.userCode = device.user_code
             self.interval = device.interval ?? 5
             
-            self.repeater = Repeater(seconds: self.interval) { [weak self] in
+            self.repeater = Repeater(seconds: self.interval, adaptive: false) { [weak self] in
                 guard let self else { return }
                 self.pollForToken { [weak self] error in
                     guard let self else { return }

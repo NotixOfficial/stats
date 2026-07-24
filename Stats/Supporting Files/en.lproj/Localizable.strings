@@ -232,6 +232,12 @@
 "Open module settings" = "Open module settings";
 "Open widget settings" = "Open widget settings";
 "Update interval" = "Update interval";
+"Power mode" = "Power mode";
+"Efficient" = "Efficient";
+"Adaptive" = "Adaptive";
+"Power sensor sampling" = "Power sensor sampling";
+"Always" = "Always";
+"On demand" = "On demand";
 "Usage history" = "Usage history";
 "Details" = "Details";
 "Top processes" = "Top processes";

@@ -44,6 +44,31 @@ public class Sensors: Module {
         self.sensorsReader = SensorsReader { [weak self] value in
             self?.usageCallback(value)
         }
+        self.sensorsReader?.powerSensorDemand = { [weak self] in
+            guard let self else { return true }
+            let checkDemand = {
+                if SystemStats.shared.monitoring ||
+                    (self.popupView.window?.isVisible ?? false) ||
+                    (self.portalView.window?.isVisible ?? false) {
+                    return true
+                }
+
+                let activeWidgets = self.menuBar.widgets.filter({ $0.isActive })
+                if activeWidgets.contains(where: { $0.item is Mini }) &&
+                    SensorsReader.IOPowerSensorKeys.contains(self.selectedSensor) {
+                    return true
+                }
+
+                if activeWidgets.contains(where: { $0.item is StackWidget }) {
+                    return self.sensorsReader?.list.sensors.contains(where: {
+                        SensorsReader.IOPowerSensorKeys.contains($0.key) && $0.state
+                    }) ?? true
+                }
+
+                return false
+            }
+            return Thread.isMainThread ? checkDemand() : DispatchQueue.main.sync(execute: checkDemand)
+        }
         
         self.settingsView.setList(self.sensorsReader?.list.sensors)
         self.popupView.setup(self.sensorsReader?.list.sensors)
@@ -65,6 +90,11 @@ public class Sensors: Module {
                     self?.settingsView.setList(self?.sensorsReader?.list.sensors)
                     self?.notificationsView.setup(self?.sensorsReader?.list.sensors)
                 }
+            }
+        }
+        self.settingsView.powerSensorSamplingCallback = { [weak self] in
+            DispatchQueue.global(qos: .utility).async {
+                self?.sensorsReader?.read()
             }
         }
         self.settingsView.unknownCallback = { [weak self] in

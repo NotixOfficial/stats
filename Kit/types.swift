@@ -186,6 +186,18 @@ public let ReaderUpdateIntervals: [KeyValue_t] = [
     KeyValue_t(key: "30", value: "30 sec"),
     KeyValue_t(key: "60", value: "60 sec")
 ]
+
+public enum PowerMode: String {
+    case standard
+    case efficient
+    case adaptive
+}
+public let PowerModes: [KeyValue_t] = [
+    KeyValue_t(key: PowerMode.standard.rawValue, value: "Standard"),
+    KeyValue_t(key: PowerMode.efficient.rawValue, value: "Efficient"),
+    KeyValue_t(key: PowerMode.adaptive.rawValue, value: "Adaptive")
+]
+
 public let NumbersOfProcesses: [Int] = [0, 3, 5, 8, 10, 15]
 
 public let NetworkReaders: [KeyValue_t] = [
@@ -323,6 +335,7 @@ public extension Notification.Name {
     static let remoteAuthenticated = Notification.Name("remoteAuthenticated")
     static let remoteUpdate = Notification.Name("remoteUpdate")
     static let openWindow = Notification.Name("openWindow")
+    static let powerModeChanged = Notification.Name("powerModeChanged")
 }
 
 public var isARM: Bool {
